@@ -1,3 +1,33 @@
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chat_models import init_chat_model
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_postgres import PGVector
+import os
+
+# Carrega as variaveis de ambiente do ".env" que vai ser usado neste fluxo e valida se estão preenchidas
+load_dotenv() 
+for item in (
+    'GOOGLE_EMBEDDING_MODEL',
+    'GOOGLE_LLM_MODEL',
+    'OPENAI_EMBEDDING_MODEL',
+    'OPENAI_LLM_MODEL',
+    'MODEL',
+    'DATABASE_URL',
+    'PG_VECTOR_COLLECTION_NAME'
+):
+    if not os.getenv(item):
+        raise RuntimeError(f'Environment variable {item} is not set')
+
+GOOGLE_EMBEDDING_MODEL = os.getenv('GOOGLE_EMBEDDING_MODEL', 'gemini-2.5-flash-lite')
+GOOGLE_LLM_MODEL = os.getenv('GOOGLE_LLM_MODEL', 'gemini-2.5-flash-lite')
+OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
+OPENAI_LLM_MODEL = os.getenv('OPENAI_LLM_MODEL', 'gpt-5-nano')
+MODEL = os.getenv('MODEL', 'opeanai')
+DATABASE_URL = os.getenv('DATABASE_URL')
+PG_VECTOR_COLLECTION_NAME = os.getenv('PG_VECTOR_COLLECTION_NAME')
+
 PROMPT_TEMPLATE = """
 CONTEXTO:
 {contexto}
@@ -26,4 +56,31 @@ RESPONDA A "PERGUNTA DO USUÁRIO"
 """
 
 def search_prompt(question=None):
-    pass
+    # Cria uma cadeia de execução comp template já predefinido no repo original e temperatura de .1
+    llm_model = OPENAI_LLM_MODEL if MODEL == 'opeanai' else GOOGLE_LLM_MODEL
+    chat_model = init_chat_model(model=llm_model, model_provider=MODEL, temperature=0.1)
+
+    template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+
+    chain = template | chat_model
+
+    # Cria um embedding com base no modelo da Google/OpenAI, para vetorizar os dados do PDF
+    embeddings = OpenAIEmbeddings(model=OPENAI_EMBEDDING_MODEL) if MODEL == 'opeanai' else GoogleGenerativeAIEmbeddings(model=GOOGLE_EMBEDDING_MODEL)
+
+    # Busca no DB, retornando os 10 vetores com maior similiaridade conforme descrito nos requisitos
+    store = PGVector(
+      embeddings=embeddings,
+      collection_name=PG_VECTOR_COLLECTION_NAME,
+      connection=DATABASE_URL,
+      use_jsonb=True
+    )
+    result = store.similarity_search(question, k=10)
+    context = '\n'.join(document.page_content for document in result)
+
+    # Inicia processamento da chain passando o contexto e a pergunta do usuario
+    response = chain.invoke({
+        'contexto': context,
+        'pergunta': question,
+    })
+
+    return response
