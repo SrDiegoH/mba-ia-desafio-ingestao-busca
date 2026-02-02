@@ -20,11 +20,11 @@ for item in (
     if not os.getenv(item):
         raise RuntimeError(f'Environment variable {item} is not set')
 
-GOOGLE_EMBEDDING_MODEL = os.getenv('GOOGLE_EMBEDDING_MODEL', 'gemini-2.5-flash-lite')
-GOOGLE_LLM_MODEL = os.getenv('GOOGLE_LLM_MODEL', 'gemini-2.5-flash-lite')
-OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
-OPENAI_LLM_MODEL = os.getenv('OPENAI_LLM_MODEL', 'gpt-5-nano')
-MODEL = os.getenv('MODEL', 'opeanai')
+GOOGLE_EMBEDDING_MODEL = os.getenv('GOOGLE_EMBEDDING_MODEL')
+GOOGLE_LLM_MODEL = os.getenv('GOOGLE_LLM_MODEL')
+OPENAI_EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL')
+OPENAI_LLM_MODEL = os.getenv('OPENAI_LLM_MODEL')
+MODEL = os.getenv('MODEL')
 DATABASE_URL = os.getenv('DATABASE_URL')
 PG_VECTOR_COLLECTION_NAME = os.getenv('PG_VECTOR_COLLECTION_NAME')
 
@@ -57,7 +57,7 @@ RESPONDA A "PERGUNTA DO USUÁRIO"
 
 def search_prompt(question=None):
     # Cria uma cadeia de execução comp template já predefinido no repo original e temperatura de .1
-    llm_model = OPENAI_LLM_MODEL if MODEL == 'opeanai' else GOOGLE_LLM_MODEL
+    llm_model = _return_if_is_openai_model(OPENAI_LLM_MODEL, GOOGLE_LLM_MODEL)
     chat_model = init_chat_model(model=llm_model, model_provider=MODEL, temperature=0.1)
 
     template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
@@ -65,7 +65,7 @@ def search_prompt(question=None):
     chain = template | chat_model
 
     # Cria um embedding com base no modelo da Google/OpenAI, para vetorizar os dados do PDF
-    embeddings = OpenAIEmbeddings(model=OPENAI_EMBEDDING_MODEL) if MODEL == 'opeanai' else GoogleGenerativeAIEmbeddings(model=GOOGLE_EMBEDDING_MODEL)
+    embeddings = _return_if_is_openai_model(OpenAIEmbeddings(model=OPENAI_EMBEDDING_MODEL), GoogleGenerativeAIEmbeddings(model=GOOGLE_EMBEDDING_MODEL))
 
     # Busca no DB, retornando os 10 vetores com maior similiaridade conforme descrito nos requisitos
     store = PGVector(
@@ -84,3 +84,6 @@ def search_prompt(question=None):
     })
 
     return response
+
+def _return_if_is_openai_model(openai_return, not_openai_return):
+    return openai_return if MODEL == 'opeanai' else not_openai_return
